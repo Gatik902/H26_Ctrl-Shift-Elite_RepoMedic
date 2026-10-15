@@ -1,0 +1,12 @@
+[project]
+name = "py-vulnerable-calc"
+version = "0.1.0"
+description = "Target benchmark repository with real code-quality and test issues for RepoMedic AI"
+dependencies = [
+    "urllib3<1.26.0",
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+pythonpath = ["."]
