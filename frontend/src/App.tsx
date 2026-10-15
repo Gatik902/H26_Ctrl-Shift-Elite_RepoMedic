@@ -27,10 +27,22 @@ import {
   VerificationResult, 
   SampleRepo, 
   ModelInfo, 
-  CapsuleExportResponse,
-  ScanJobStatus
+  CapsuleExportResponse
 } from './types';
-import { AlertCircle, Stethoscope, Sparkles, FolderGit2, CheckCircle2 } from 'lucide-react';
+import { 
+  AlertCircle, 
+  Stethoscope, 
+  Sparkles, 
+  ShieldCheck, 
+  Cpu, 
+  CheckCircle2, 
+  ArrowRight,
+  Terminal,
+  Activity,
+  HeartPulse,
+  GitPullRequest,
+  Check
+} from 'lucide-react';
 
 export function App() {
   const [backendHealthy, setBackendHealthy] = useState(false);
@@ -142,7 +154,6 @@ export function App() {
     try {
       const ver = await apiClient.verifyProposal(prop.id, currentScan.scan_id);
       setVerifications(prev => ({ ...prev, [prop.id]: ver }));
-      // Update proposal status in state
       setProposals(prev => ({
         ...prev,
         [selectedFinding.id]: {
@@ -211,7 +222,7 @@ export function App() {
   const activeVerification = activeProposal ? verifications[activeProposal.id] : undefined;
 
   return (
-    <div className="min-h-screen bg-[#080b11] text-slate-200 flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-950">
+    <div className="min-h-screen text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-950">
       {/* Top Navbar */}
       <Navbar
         modelInfo={modelInfo}
@@ -221,8 +232,8 @@ export function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Intake Card */}
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-7">
+        {/* Intake Command Card */}
         <RepoInput
           onStartScan={handleStartScan}
           scanStatus={currentScan?.status || 'PENDING'}
@@ -232,35 +243,97 @@ export function App() {
 
         {/* Scan Error Banner */}
         {scanError && (
-          <div className="p-4 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-sm flex items-center gap-3">
-            <AlertCircle className="h-5 w-5 text-rose-400 shrink-0" />
+          <div className="p-4 sm:p-5 rounded-2xl bg-rose-950/70 border border-rose-800 text-rose-300 text-sm flex items-center gap-3.5 shadow-xl">
+            <AlertCircle className="h-6 w-6 text-rose-400 shrink-0" />
             <div>
-              <div className="font-bold">Diagnostic Pipeline Error</div>
-              <div className="text-xs text-rose-200 mt-0.5">{scanError}</div>
+              <div className="font-bold text-base">Diagnostic Pipeline Exception</div>
+              <div className="text-xs text-rose-200 mt-0.5 font-mono">{scanError}</div>
             </div>
           </div>
         )}
 
-        {/* Empty State before any scan */}
+        {/* Empty State: Rich High-Tech Operations Center Overview */}
         {!currentScan && !isScanning && !scanError && (
-          <div className="text-center py-20 px-4 bg-slate-900/30 border border-slate-800/60 rounded-3xl backdrop-blur-sm">
-            <div className="h-16 w-16 mx-auto rounded-2xl bg-gradient-to-tr from-cyan-500/20 to-emerald-500/20 border border-cyan-500/30 flex items-center justify-center mb-4">
-              <Stethoscope className="h-8 w-8 text-cyan-400" />
+          <div className="space-y-6 animate-fadeIn">
+            {/* Visual Medical ICU Dashboard Hero */}
+            <div className="relative overflow-hidden rounded-3xl border border-cyan-500/25 bg-gradient-to-b from-slate-900/80 to-slate-950/90 p-8 sm:p-12 shadow-2xl backdrop-blur-xl">
+              {/* Background ambient light */}
+              <div className="absolute top-0 right-0 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="relative z-10 max-w-3xl">
+                <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-cyan-950/80 border border-cyan-700/60 text-xs text-cyan-300 font-mono mb-4">
+                  <HeartPulse className="h-4 w-4 text-cyan-400 animate-pulse" />
+                  <span>TRACK 2 MAINTENANCE AGENT PLATFORM</span>
+                </div>
+
+                <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
+                  Autonomous Repository ICU & <br />
+                  <span className="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-teal-300 to-emerald-400">
+                    The Verified Fix Loop
+                  </span>
+                </h2>
+
+                <p className="text-sm sm:text-base text-slate-300 mt-4 leading-relaxed">
+                  RepoMedic AI analyzes real repository codebases, detects genuine test failures and security flaws, uses an open-weight model to propose targeted patches, verifies fixes in an isolated sandbox, and outputs a versioned <strong>Dependency Exit Capsule</strong>.
+                </p>
+
+                {/* Quick start CTA */}
+                <div className="mt-8 flex flex-wrap items-center gap-4">
+                  <button
+                    onClick={() => handleStartScan('', 'main', true, 'py-vulnerable-calc')}
+                    className="px-6 py-3.5 rounded-2xl bg-gradient-to-r from-cyan-500 via-teal-400 to-emerald-400 text-slate-950 font-black text-sm shadow-xl shadow-cyan-500/25 hover:brightness-110 transition-all flex items-center gap-2 cursor-pointer transform hover:-translate-y-0.5 active:translate-y-0"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    <span>Run Verified Benchmark (py-vulnerable-calc)</span>
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* High-Tech Capability Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-12 pt-8 border-t border-slate-800/80">
+                <div className="p-5 rounded-2xl bg-slate-950/60 border border-slate-800/80 backdrop-blur-sm">
+                  <div className="h-10 w-10 rounded-xl bg-cyan-950/80 border border-cyan-800 text-cyan-400 flex items-center justify-center mb-3">
+                    <Activity className="h-5 w-5" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white">1. Grounded Diagnosis</h4>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    Zero hallucinations or mock data. Every defect is observed via actual Flake8 AST checks, Bandit security scans, and real Pytest execution.
+                  </p>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-slate-950/60 border border-slate-800/80 backdrop-blur-sm">
+                  <div className="h-10 w-10 rounded-xl bg-emerald-950/80 border border-emerald-800 text-emerald-400 flex items-center justify-center mb-3">
+                    <ShieldCheck className="h-5 w-5" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white">2. Isolated Sandbox Ward</h4>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    Proposed patches run in disposable sandbox worktrees. Compares pristine baseline exit code (1) vs patched exit code (0) before requesting maintainer approval.
+                  </p>
+                </div>
+
+                <div className="p-5 rounded-2xl bg-slate-950/60 border border-slate-800/80 backdrop-blur-sm">
+                  <div className="h-10 w-10 rounded-xl bg-purple-950/80 border border-purple-800 text-purple-400 flex items-center justify-center mb-3">
+                    <GitPullRequest className="h-5 w-5" />
+                  </div>
+                  <h4 className="text-sm font-bold text-white">3. Dependency Exit Capsule</h4>
+                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                    Automated discharge package in validated JSON (schema 1.0.0) and Markdown report with differential proof and non-destructive rollback commands.
+                  </p>
+                </div>
+              </div>
             </div>
-            <h3 className="text-lg font-bold text-white">No Repository Diagnosed Yet</h3>
-            <p className="text-sm text-slate-400 mt-1 max-w-lg mx-auto">
-              Provide a public GitHub repository URL above, or click on the <strong>py-vulnerable-calc</strong> benchmark fixture to see real static analysis, AST security flaws, and test failures resolved in real time.
-            </p>
           </div>
         )}
 
         {/* Completed Scan Results */}
         {currentScan && currentScan.status === 'COMPLETED' && (
           <div className="space-y-6 animate-fadeIn">
-            {/* Triage Summary Cards */}
+            {/* Triage Summary Cards with Health Gauge */}
             <SummaryCards scanResult={currentScan} />
 
-            {/* Findings List */}
+            {/* Filterable Findings List */}
             <FindingsList
               findings={currentScan.findings}
               onSelectFinding={(f) => setSelectedFinding(f)}
@@ -271,7 +344,7 @@ export function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800/80 py-6 text-center text-xs text-slate-500 bg-slate-950/60">
+      <footer className="border-t border-slate-800/80 py-7 text-center text-xs text-slate-500 bg-slate-950/80 font-mono">
         RepoMedic AI • Track 2 Maintenance Agent • Hackathon 2026 • Verified Fix Loop & Dependency Exit Capsule
       </footer>
 
