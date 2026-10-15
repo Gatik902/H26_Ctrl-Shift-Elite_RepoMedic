@@ -68,6 +68,9 @@ class PatchProposal(BaseModel):
     explanation: str
     root_cause: str
     suggested_tests: List[str] = []
+    risky_dependency: Optional[str] = None
+    recommended_replacement: Optional[str] = None
+    migration_steps: List[str] = []
     before_content: str
     after_content: str
     diff: str

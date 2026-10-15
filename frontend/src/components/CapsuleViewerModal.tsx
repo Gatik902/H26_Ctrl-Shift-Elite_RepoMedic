@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { X, Download, Copy, Check, FileJson, FileText, ShieldCheck } from 'lucide-react';
-import type { CapsuleExportResponse } from '../types';
+import { X, Download, Copy, Check, FileText, Code2, ShieldCheck } from 'lucide-react';
+import type { CapsuleData } from '../types';
 
 interface CapsuleViewerModalProps {
-  capsuleData: CapsuleExportResponse;
+  capsuleData: CapsuleData;
   onClose: () => void;
 }
 
@@ -11,28 +11,27 @@ export const CapsuleViewerModal: React.FC<CapsuleViewerModalProps> = ({
   capsuleData,
   onClose
 }) => {
-  const [activeTab, setActiveTab] = useState<'markdown' | 'json'>('markdown');
+  const [activeTab, setActiveTab] = useState<'markdown' | 'json'>('json');
   const [copied, setCopied] = useState(false);
 
   const jsonString = JSON.stringify(capsuleData.json_capsule, null, 2);
-  const markdownText = capsuleData.markdown_report;
-
-  const currentContent = activeTab === 'markdown' ? markdownText : jsonString;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(currentContent);
+    const textToCopy = activeTab === 'json' ? jsonString : capsuleData.markdown_report;
+    navigator.clipboard.writeText(textToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleDownload = () => {
-    const ext = activeTab === 'markdown' ? 'md' : 'json';
-    const type = activeTab === 'markdown' ? 'text/markdown' : 'application/json';
-    const blob = new Blob([currentContent], { type });
+    const isJson = activeTab === 'json';
+    const blob = new Blob([isJson ? jsonString : capsuleData.markdown_report], {
+      type: isJson ? 'application/json' : 'text/markdown'
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `dependency-exit-capsule-${capsuleData.json_capsule?.capsule_id || 'repomedic'}.${ext}`;
+    a.download = isJson ? 'dependency-exit-capsule.json' : 'dependency-exit-report.md';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -40,85 +39,83 @@ export const CapsuleViewerModal: React.FC<CapsuleViewerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-md">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/40 backdrop-blur-md">
+      <div className="relative w-full max-w-4xl max-h-[90vh] bg-white/95 border border-white rounded-3xl shadow-2xl overflow-hidden flex flex-col font-sans">
+        
         {/* Header */}
-        <div className="px-6 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 rounded-lg bg-cyan-950 border border-cyan-800 text-cyan-400">
+        <div className="px-6 py-4.5 border-b border-slate-200/70 flex items-center justify-between bg-slate-50/80">
+          <div className="flex items-center space-x-2.5">
+            <div className="h-8 w-8 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-center text-indigo-600 shadow-sm">
               <ShieldCheck className="h-4 w-4" />
             </div>
             <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>Dependency Exit Capsule</span>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800 font-mono">
-                  Schema v{capsuleData.json_capsule?.schema_version || '1.0.0'}
-                </span>
-              </h3>
-              <p className="text-[11px] text-slate-400 font-mono">
-                ID: {capsuleData.json_capsule?.capsule_id}
-              </p>
+              <h3 className="text-sm font-bold text-slate-900">Dependency Exit Capsule</h3>
+              <p className="text-[11px] text-slate-500 font-mono">Schema v1.0.0 Canonical Export</p>
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
+            {/* Tab switch */}
+            <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200">
+              <button
+                onClick={() => setActiveTab('json')}
+                className={`px-3 py-1.5 text-xs font-mono rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeTab === 'json' ? 'bg-white text-indigo-700 font-bold shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Code2 className="h-3 w-3" />
+                <span>JSON Payload</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('markdown')}
+                className={`px-3 py-1.5 text-xs font-mono rounded-lg flex items-center gap-1.5 transition-all cursor-pointer ${
+                  activeTab === 'markdown' ? 'bg-white text-indigo-700 font-bold shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <FileText className="h-3 w-3" />
+                <span>Markdown Report</span>
+              </button>
+            </div>
+
+            {/* Copy Button */}
             <button
               onClick={handleCopy}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+              className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-mono flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
             >
-              {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
+              {copied ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
               <span>{copied ? 'Copied' : 'Copy'}</span>
             </button>
 
+            {/* Download Button */}
             <button
               onClick={handleDownload}
-              className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shadow-cyan-600/20 transition-all"
+              className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-md shadow-indigo-500/20"
             >
-              <Download className="h-3.5 w-3.5" />
-              <span>Download .{activeTab === 'markdown' ? 'md' : 'json'}</span>
+              <Download className="h-3 w-3" />
+              <span>Download</span>
             </button>
 
+            {/* Close */}
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/50 transition-colors cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        {/* Tab Switcher */}
-        <div className="px-6 py-2 border-b border-slate-800/80 bg-slate-950/40 flex items-center space-x-2 text-xs font-mono">
-          <button
-            onClick={() => setActiveTab('markdown')}
-            className={`px-3 py-1.5 rounded-md font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === 'markdown'
-                ? 'bg-slate-800 text-white font-semibold'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <FileText className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Maintainer Markdown Report</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('json')}
-            className={`px-3 py-1.5 rounded-md font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
-              activeTab === 'json'
-                ? 'bg-slate-800 text-white font-semibold'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <FileJson className="h-3.5 w-3.5 text-emerald-400" />
-            <span>Validated JSON Payload</span>
-          </button>
-        </div>
-
         {/* Content Viewer */}
-        <div className="flex-1 overflow-y-auto p-5 bg-slate-950 font-mono text-xs">
-          <pre className="text-slate-300 leading-relaxed whitespace-pre-wrap">
-            {currentContent}
-          </pre>
+        <div className="p-6 overflow-y-auto max-h-[70vh]">
+          {activeTab === 'json' ? (
+            <pre className="p-4 rounded-2xl bg-slate-900 text-slate-100 border border-slate-800 text-xs font-mono overflow-x-auto leading-relaxed shadow-inner">
+              {jsonString}
+            </pre>
+          ) : (
+            <div className="p-6 rounded-2xl bg-white border border-slate-200 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap font-mono shadow-sm">
+              {capsuleData.markdown_report}
+            </div>
+          )}
         </div>
       </div>
     </div>

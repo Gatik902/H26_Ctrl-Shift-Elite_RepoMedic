@@ -8,7 +8,7 @@ import {
   Settings, 
   ChevronLeft, 
   ChevronRight,
-  Stethoscope,
+  Shield,
   Radio
 } from 'lucide-react';
 import type { ModelInfo } from '../types';
@@ -38,10 +38,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   canExportCapsule,
   modelInfo
 }) => {
-  const navItems: { id: NavTab; label: string; icon: React.ReactNode; badge?: number | string; disabled?: boolean }[] = [
+  const navItems: { id: NavTab; label: string; icon: React.ReactNode; badge?: number | string }[] = [
     {
       id: 'overview',
-      label: 'Overview',
+      label: 'Overview & Vitals',
       icon: <LayoutDashboard className="h-4 w-4 shrink-0" />
     },
     {
@@ -76,22 +76,22 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside 
-      className={`relative flex flex-col justify-between border-r border-slate-800/80 bg-[#090d16]/95 backdrop-blur-xl transition-all duration-300 z-30 select-none ${
+      className={`relative flex flex-col justify-between border-r border-white/60 bg-white/65 backdrop-blur-2xl transition-all duration-300 z-30 select-none shadow-[4px_0_24px_rgba(0,0,0,0.02)] ${
         isCollapsed ? 'w-16' : 'w-64'
       }`}
     >
       {/* Top Header / Branding */}
       <div>
-        <div className="h-16 px-4 flex items-center justify-between border-b border-slate-800/80">
-          <div className="flex items-center space-x-3 overflow-hidden">
-            <div className="h-9 w-9 rounded-lg bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-500/40 flex items-center justify-center shrink-0 shadow-sm shadow-cyan-500/10">
-              <Stethoscope className="h-4.5 w-4.5 text-cyan-400" />
+        <div className="h-16 px-4 flex items-center justify-between border-b border-slate-200/50">
+          <div className="flex items-center space-x-2.5 overflow-hidden">
+            <div className="h-8 w-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-violet-500 text-white flex items-center justify-center shrink-0 font-black text-xs shadow-md shadow-indigo-500/25">
+              <Shield className="h-4 w-4 fill-white" />
             </div>
             {!isCollapsed && (
               <div className="leading-tight truncate">
                 <div className="flex items-center space-x-1.5">
-                  <span className="font-bold text-sm tracking-tight text-white font-brand">RepoMedic</span>
-                  <span className="text-xs font-bold text-cyan-400">AI</span>
+                  <span className="font-extrabold text-sm tracking-tight text-slate-900">RepoMedic</span>
+                  <span className="text-[10px] font-extrabold px-1.5 py-0.2 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200/60">AI</span>
                 </div>
                 <span className="text-[10px] text-slate-500 font-mono tracking-wider uppercase">Maintenance Agent</span>
               </div>
@@ -101,7 +101,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <button
             onClick={onToggleCollapse}
             aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            className="p-1 rounded-md text-slate-400 hover:text-white hover:bg-slate-800/80 transition-colors"
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100/80 transition-colors"
           >
             {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </button>
@@ -115,15 +115,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <button
                 key={item.id}
                 onClick={() => onSelectTab(item.id)}
-                disabled={item.disabled}
                 title={isCollapsed ? item.label : undefined}
-                className={`w-full flex items-center rounded-lg px-3 py-2.5 text-xs font-medium transition-all group cursor-pointer ${
+                className={`w-full flex items-center rounded-xl px-3 py-2.5 text-xs font-semibold transition-all group cursor-pointer ${
                   isActive
-                    ? 'bg-slate-800/90 text-cyan-300 border border-cyan-500/30 shadow-sm shadow-cyan-500/5'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850/60'
+                    ? 'bg-white text-indigo-600 shadow-sm shadow-slate-200/80 border border-slate-200/70'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/70'
                 }`}
               >
-                <span className={`${isActive ? 'text-cyan-400' : 'text-slate-500 group-hover:text-slate-300'}`}>
+                <span className={`${isActive ? 'text-indigo-600' : 'text-slate-400 group-hover:text-slate-600'}`}>
                   {item.icon}
                 </span>
 
@@ -132,10 +131,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 )}
 
                 {!isCollapsed && item.badge !== undefined && (
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold ${
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-mono font-bold ${
                     isActive 
-                      ? 'bg-cyan-950 text-cyan-300 border border-cyan-800' 
-                      : 'bg-slate-800 text-slate-400'
+                      ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
+                      : 'bg-slate-100 text-slate-500'
                   }`}>
                     {item.badge}
                   </span>
@@ -147,29 +146,29 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Bottom Status / Model Provenance */}
-      <div className="p-3 border-t border-slate-800/80 space-y-2">
+      <div className="p-3 border-t border-slate-200/50 space-y-2">
         {!isCollapsed && modelInfo && (
-          <div className="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800/70 text-[11px] font-mono leading-tight">
-            <div className="text-slate-500 text-[10px] uppercase font-bold tracking-wider">Model Runtime</div>
-            <div className="text-slate-300 truncate font-semibold mt-0.5" title={modelInfo.model_id}>
+          <div className="p-2.5 rounded-xl bg-white/70 border border-slate-200/60 text-[11px] font-mono leading-tight shadow-sm">
+            <div className="text-slate-500 text-[9px] uppercase font-bold tracking-wider">Model Provenance</div>
+            <div className="text-slate-800 truncate font-bold mt-0.5" title={modelInfo.model_id}>
               {modelInfo.model_id}
             </div>
-            <div className="text-[10px] text-cyan-400/90 mt-0.5">
-              {modelInfo.used_ai ? 'Open-Weight Inference' : 'Deterministic Engine'}
+            <div className="text-[10px] text-indigo-600 font-semibold mt-0.5">
+              {modelInfo.used_ai ? 'Open-Weight LLM' : 'Deterministic Engine'}
             </div>
           </div>
         )}
 
         {/* Engine Connectivity Indicator */}
-        <div className={`flex items-center rounded-lg px-2.5 py-2 text-xs border ${
+        <div className={`flex items-center rounded-xl px-3 py-2 text-xs border ${
           backendHealthy 
-            ? 'bg-emerald-950/20 border-emerald-900/40 text-emerald-300' 
-            : 'bg-rose-950/20 border-rose-900/40 text-rose-300'
+            ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800' 
+            : 'bg-rose-50/80 border-rose-200 text-rose-800'
         }`}>
-          <Radio className={`h-3 w-3 shrink-0 ${backendHealthy ? 'text-emerald-400 animate-pulse' : 'text-rose-500'}`} />
+          <Radio className={`h-3 w-3 shrink-0 ${backendHealthy ? 'text-emerald-600 animate-pulse' : 'text-rose-600'}`} />
           {!isCollapsed && (
-            <span className="ml-2 font-mono text-[11px] truncate">
-              {backendHealthy ? 'Engine: 127.0.0.1:8000' : 'Engine Offline'}
+            <span className="ml-2 font-mono text-[11px] font-medium truncate">
+              {backendHealthy ? 'Engine Online: 8000' : 'Engine Offline'}
             </span>
           )}
         </div>

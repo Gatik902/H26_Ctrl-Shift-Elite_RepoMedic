@@ -54,6 +54,9 @@ export interface PatchProposal {
   explanation: string;
   root_cause: string;
   suggested_tests: string[];
+  risky_dependency?: string;
+  recommended_replacement?: string;
+  migration_steps?: string[];
   before_content: string;
   after_content: string;
   diff: string;
@@ -97,6 +100,7 @@ export type ScanJobStatus = 'PENDING' | 'CLONING' | 'ANALYZING' | 'COMPLETED' | 
 
 export interface ScanResult {
   scan_id: string;
+  id?: string;
   repo_url: string;
   commit_hash?: string;
   branch?: string;
@@ -122,3 +126,5 @@ export interface CapsuleExportResponse {
   json_capsule: any;
   markdown_report: string;
 }
+
+export type CapsuleData = CapsuleExportResponse;

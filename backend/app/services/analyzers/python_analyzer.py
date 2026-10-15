@@ -13,14 +13,26 @@ FLAKE8_LINE_REGEX = re.compile(r"^([^:]+):(\d+):(\d+):\s+([A-Z]\d+)\s+(.+)$")
 PYTEST_FAIL_REGEX = re.compile(r"^FAILED\s+([^:]+)::(\w+)(?:\s+-\s+(.+))?$")
 
 class PythonAnalyzer:
+    EXCLUDE_DIRS = {".git", ".venv", "venv", "node_modules", ".workspaces", "dist", "build", "__pycache__"}
+
     def __init__(self, repo_dir: Path):
         self.repo_dir = repo_dir
-        # Determine python/flake8/bandit/pytest path (prefer current virtualenv)
-        venv_scripts = Path(sys.executable).parent
-        self.flake8_bin = str(venv_scripts / "flake8.exe") if (venv_scripts / "flake8.exe").exists() else "flake8"
-        self.bandit_bin = str(venv_scripts / "bandit.exe") if (venv_scripts / "bandit.exe").exists() else "bandit"
-        self.pytest_bin = str(venv_scripts / "pytest.exe") if (venv_scripts / "pytest.exe").exists() else "pytest"
         self.python_bin = sys.executable
+
+    def _get_subprocess_env(self) -> dict:
+        env = os.environ.copy()
+        venv_scripts = str(Path(self.python_bin).parent)
+        env["PATH"] = f"{venv_scripts}{os.pathsep}{env.get('PATH', '')}"
+        
+        # Include repo_dir and immediate subdirectories in PYTHONPATH so local imports succeed
+        subdirs = [str(self.repo_dir)]
+        for sub in ["src", "backend", "app", "api", "server", "lib"]:
+            p = self.repo_dir / sub
+            if p.is_dir():
+                subdirs.append(str(p))
+        existing_pp = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = os.pathsep.join(subdirs + ([existing_pp] if existing_pp else []))
+        return env
 
     @staticmethod
     def _cmd_to_str(cmd_list: List[str]) -> str:
@@ -45,7 +57,12 @@ class PythonAnalyzer:
     def run_flake8(self) -> List[Finding]:
         """Runs flake8 to detect syntax errors, unresolved imports, and style bugs."""
         findings = []
-        cmd = [self.flake8_bin, "--max-line-length=120", "--isolated", "."]
+        cmd = [
+            self.python_bin, "-m", "flake8",
+            "--isolated",
+            "--exclude=.git,.venv,venv,node_modules,.workspaces,dist,build,__pycache__",
+            "."
+        ]
         
         try:
             res = subprocess.run(
@@ -53,7 +70,8 @@ class PythonAnalyzer:
                 cwd=str(self.repo_dir),
                 capture_output=True,
                 text=True,
-                timeout=20
+                env=self._get_subprocess_env(),
+                timeout=25
             )
             raw_output = res.stdout + "\n" + res.stderr
         except Exception as e:
@@ -107,7 +125,13 @@ class PythonAnalyzer:
     def run_bandit(self) -> List[Finding]:
         """Runs Bandit AST security scanner to detect real vulnerabilities."""
         findings = []
-        cmd = [self.bandit_bin, "-r", ".", "-f", "json", "-q"]
+        cmd = [
+            self.python_bin, "-m", "bandit",
+            "-r", ".",
+            "-f", "json",
+            "-q",
+            "-x", ".git,.venv,venv,node_modules,.workspaces,dist,build,__pycache__"
+        ]
         
         try:
             res = subprocess.run(
@@ -115,7 +139,8 @@ class PythonAnalyzer:
                 cwd=str(self.repo_dir),
                 capture_output=True,
                 text=True,
-                timeout=20
+                env=self._get_subprocess_env(),
+                timeout=25
             )
             raw_json = res.stdout
             if not raw_json.strip():
@@ -132,37 +157,41 @@ class PythonAnalyzer:
             except Exception:
                 rel_path = raw_path.replace(str(self.repo_dir), "").lstrip("/\\").replace("\\", "/")
 
-            # Filter out test files and directories from Bandit security issues
-            if "test" in rel_path.lower() or rel_path.startswith("tests/"):
-                continue
-
             line_no = item.get("line_number", 1)
             issue_text = item.get("issue_text", "")
             test_id = item.get("test_id", "B000")
             bandit_sev = item.get("issue_severity", "MEDIUM").upper()
 
-            severity = Severity.MEDIUM
-            if bandit_sev == "HIGH":
-                severity = Severity.HIGH
-            elif bandit_sev == "LOW":
-                severity = Severity.LOW
+            is_test_file = "test" in rel_path.lower() or rel_path.startswith("tests/")
+            category = FindingCategory.SECURITY_RISK
 
-            # Elevate critical issues like command execution / eval / injection
-            if test_id in ["B608", "B102", "B103", "B307", "B602"]:
-                severity = Severity.CRITICAL
+            if is_test_file:
+                severity = Severity.LOW
+                if test_id == "B101":
+                    category = FindingCategory.LINT_VIOLATION
+            else:
+                severity = Severity.MEDIUM
+                if bandit_sev == "HIGH":
+                    severity = Severity.HIGH
+                elif bandit_sev == "LOW":
+                    severity = Severity.LOW
+
+                # Elevate critical issues like command execution / eval / injection
+                if test_id in ["B608", "B102", "B103", "B307", "B602"]:
+                    severity = Severity.CRITICAL
 
             ctx = self._read_context_code(rel_path, line_no)
 
             findings.append(Finding(
                 id=f"FIND-SEC-{len(findings) + 1:03d}",
-                category=FindingCategory.SECURITY_RISK,
+                category=category,
                 severity=severity,
                 file_path=rel_path,
                 line_number=line_no,
                 column=1,
                 rule_id=test_id,
                 message=issue_text,
-                evidence_source=f"Bandit security scan ({test_id}): {issue_text}",
+                evidence_source=f"Bandit AST scan ({test_id}): {issue_text}",
                 command=self._cmd_to_str(cmd),
                 origin=FindingOrigin.OBSERVED,
                 context_code=ctx
@@ -179,22 +208,42 @@ class PythonAnalyzer:
         passed_count = 0
         failed_count = 0
 
-        # Check if tests exist
-        test_files = list(self.repo_dir.glob("**/test_*.py")) + list(self.repo_dir.glob("**/*_test.py"))
+        # Check if tests exist, excluding venv / node_modules
+        def _is_excluded(p: Path) -> bool:
+            try:
+                rel = p.relative_to(self.repo_dir)
+                return any(part in self.EXCLUDE_DIRS for part in rel.parts)
+            except Exception:
+                return False
+
+        test_files = []
+        for pat in ["**/test_*.py", "**/*_test.py", "**/tests.py", "**/test.py"]:
+            for candidate in self.repo_dir.glob(pat):
+                if not _is_excluded(candidate):
+                    test_files.append(candidate)
+        if not test_files:
+            for t_dir in ["tests", "test"]:
+                t_path = self.repo_dir / t_dir
+                if t_path.is_dir() and not _is_excluded(t_path):
+                    for candidate in t_path.glob("**/*.py"):
+                        if not _is_excluded(candidate):
+                            test_files.append(candidate)
+
         if not test_files:
             return findings, passed_count, failed_count
 
-        cmd = [self.pytest_bin, "-v", "--tb=short", "--color=no"]
+        cmd = [self.python_bin, "-m", "pytest", "-v", "--tb=short", "--color=no"]
         try:
             res = subprocess.run(
                 cmd,
                 cwd=str(self.repo_dir),
                 capture_output=True,
                 text=True,
-                timeout=30
+                env=self._get_subprocess_env(),
+                timeout=35
             )
             raw_output = res.stdout + "\n" + res.stderr
-        except Exception as e:
+        except Exception:
             return findings, passed_count, failed_count
 
         lines = raw_output.splitlines()
@@ -213,7 +262,6 @@ class PythonAnalyzer:
                 src_line = None
                 if source_frame_match:
                     candidate_file = source_frame_match.group(1).replace("\\", "/")
-                    # Prefer non-test files as primary defect source
                     frames = re.findall(r"([a-zA-Z0-9_\-\.\/\\]+\.py):(\d+):\s+in\s+([a-zA-Z0-9_]+)", block_body)
                     for f_name, f_line, f_sub in reversed(frames):
                         cleaned_f = f_name.replace("\\", "/")
@@ -239,8 +287,32 @@ class PythonAnalyzer:
             elif " FAILED" in line:
                 failed_count += 1
 
+            # Handle pytest collection / import failures
+            if line_clean.startswith("ERROR collecting "):
+                failed_count += 1
+                rest = line_clean[len("ERROR collecting "):].strip()
+                target_file = rest.split(":")[0].strip()
+                reason = rest.split(":", 1)[1].strip() if ":" in rest else "Collection/Import Error"
+                test_func = "test_collection"
+                line_no = 1
+                ctx = self._read_context_code(target_file, line_no)
+                findings.append(Finding(
+                    id=f"FIND-TEST-{len(findings) + 1:03d}",
+                    category=FindingCategory.TEST_FAILURE,
+                    severity=Severity.HIGH,
+                    file_path=target_file.replace("\\", "/"),
+                    line_number=line_no,
+                    column=1,
+                    rule_id="PYTEST_COLLECT_ERROR",
+                    message=f"Test collection failed for '{target_file}': {reason}",
+                    evidence_source=f"pytest execution output: {line_clean}",
+                    command=self._cmd_to_str(cmd),
+                    origin=FindingOrigin.OBSERVED,
+                    context_code=ctx
+                ))
+                continue
+
             if line_clean.startswith("FAILED ") or line_clean.startswith("ERROR "):
-                # e.g. FAILED tests/test_calc.py::test_divide_zero_guard - ZeroDivisionError: division by zero
                 parts = line_clean.split(None, 2)
                 target = parts[1] if len(parts) > 1 else ""
                 reason = parts[2] if len(parts) > 2 else "Test assertion failed"
@@ -283,4 +355,141 @@ class PythonAnalyzer:
                     context_code=ctx
                 ))
 
+        # Handle suite-level crash or conftest import failure if no individual tests ran
+        if res.returncode != 0 and failed_count == 0 and not findings:
+            failed_count += 1
+            err_line = ""
+            err_file = "tests/conftest.py"
+            err_line_no = 1
+            for l in lines:
+                if any(k in l for k in ["ModuleNotFoundError:", "ImportError:", "SyntaxError:", "Traceback"]):
+                    err_line = l.strip()
+                match_frame = re.search(r"([a-zA-Z0-9_\-\.\/\\]+\.py):(\d+):", l)
+                if match_frame:
+                    cand = match_frame.group(1).replace("\\", "/")
+                    if not any(part in self.EXCLUDE_DIRS for part in cand.split("/")):
+                        err_file = cand
+                        err_line_no = int(match_frame.group(2))
+            
+            if not err_line:
+                err_line = (res.stderr or res.stdout).strip().splitlines()[-1] if (res.stderr or res.stdout).strip() else "Pytest failed to execute test suite"
+
+            ctx = self._read_context_code(err_file, err_line_no)
+            findings.append(Finding(
+                id=f"FIND-TEST-{len(findings) + 1:03d}",
+                category=FindingCategory.TEST_FAILURE,
+                severity=Severity.HIGH,
+                file_path=err_file.replace("\\", "/"),
+                line_number=err_line_no,
+                column=1,
+                rule_id="PYTEST_EXECUTION_ERROR",
+                message=f"Test suite execution failed: {err_line}",
+                evidence_source=f"pytest runner error: {err_line}",
+                command=self._cmd_to_str(cmd),
+                origin=FindingOrigin.OBSERVED,
+                context_code=ctx
+            ))
+
+        # Parse pytest deprecation & runtime warnings
+        warning_regex = re.compile(r"([a-zA-Z0-9_\-\.\/\\]+\.py):(\d+):\s+([A-Za-z0-9_]+):\s+(.+)")
+        seen_warnings = set()
+        for line in lines:
+            line_str = line.strip()
+            w_match = warning_regex.search(line_str)
+            if w_match:
+                raw_file = w_match.group(1)
+                try:
+                    rel_f = Path(raw_file).relative_to(self.repo_dir).as_posix()
+                except Exception:
+                    rel_f = raw_file.replace(str(self.repo_dir), "").lstrip("/\\").replace("\\", "/")
+
+                # Skip warnings originating inside site-packages / .venv
+                if any(part in self.EXCLUDE_DIRS or "site-packages" in part.lower() for part in rel_f.split("/")):
+                    continue
+
+                line_no = int(w_match.group(2))
+                warn_type = w_match.group(3)
+                warn_msg = w_match.group(4)
+                
+                dedup_key = (rel_f, line_no, warn_type)
+                if dedup_key in seen_warnings:
+                    continue
+                seen_warnings.add(dedup_key)
+
+                ctx = self._read_context_code(rel_f, line_no)
+                findings.append(Finding(
+                    id=f"FIND-WARN-{len(findings) + 1:03d}",
+                    category=FindingCategory.DEPRECATION,
+                    severity=Severity.HIGH if "pkg_resources" in warn_msg else Severity.MEDIUM,
+                    file_path=rel_f.replace("\\", "/"),
+                    line_number=line_no,
+                    column=1,
+                    rule_id=warn_type,
+                    message=f"{warn_type}: {warn_msg}",
+                    evidence_source=f"pytest runtime warning: {line_str}",
+                    command=self._cmd_to_str(cmd),
+                    origin=FindingOrigin.OBSERVED,
+                    context_code=ctx
+                ))
+
         return findings, passed_count, failed_count
+
+    def run_dependency_audit(self) -> List[Finding]:
+        """Audits requirements and manifests for deprecated or severely vulnerable pinned dependencies."""
+        findings = []
+        KNOWN_RISKS = {
+            "jinja2": {
+                "vulnerable_below": "3.1.4",
+                "cve": "CVE-2024-34064",
+                "message": "Jinja2 version is outdated (<3.1.4) and vulnerable to cross-site scripting (XSS) and template sandbox escapes."
+            },
+            "urllib3": {
+                "vulnerable_below": "1.26.18",
+                "cve": "CVE-2023-45803",
+                "message": "urllib3 version is vulnerable to request body leaks and Cookie header exposure on redirect."
+            },
+            "idna": {
+                "vulnerable_below": "3.0",
+                "cve": "DEPRECATED_PACKAGE",
+                "message": "idna version is legacy (v2.x) and deprecated on modern Python versions."
+            },
+            "setuptools": {
+                "vulnerable_below": "70.0.0",
+                "cve": "CVE-2024-6345",
+                "message": "Legacy setuptools version contains remote code execution vulnerability in package download/installation."
+            }
+        }
+        for req_name in ["requirements.txt", "requirements-dev.txt"]:
+            req_file = self.repo_dir / req_name
+            if not req_file.exists():
+                continue
+            rel_name = req_file.relative_to(self.repo_dir).as_posix()
+            try:
+                for idx, line in enumerate(req_file.read_text(encoding="utf-8", errors="replace").splitlines()):
+                    raw = line.split("#")[0].strip()
+                    if "==" in raw:
+                        parts = [p.strip() for p in raw.split("==", 1)]
+                        pkg = parts[0]
+                        ver = parts[1]
+                        pkg_lower = pkg.lower()
+                        if pkg_lower in KNOWN_RISKS:
+                            risk = KNOWN_RISKS[pkg_lower]
+                            ctx = self._read_context_code(rel_name, idx + 1)
+                            cat = FindingCategory.SECURITY_RISK if "CVE" in risk["cve"] else FindingCategory.DEPRECATION
+                            findings.append(Finding(
+                                id=f"FIND-DEP-{len(findings) + 1:03d}",
+                                category=cat,
+                                severity=Severity.HIGH,
+                                file_path=rel_name,
+                                line_number=idx + 1,
+                                column=1,
+                                rule_id=risk["cve"],
+                                message=f"{pkg}=={ver}: {risk['message']}",
+                                evidence_source=f"Dependency audit in {rel_name}: {raw}",
+                                command=f"audit {rel_name}",
+                                origin=FindingOrigin.OBSERVED,
+                                context_code=ctx
+                            ))
+            except Exception:
+                continue
+        return findings

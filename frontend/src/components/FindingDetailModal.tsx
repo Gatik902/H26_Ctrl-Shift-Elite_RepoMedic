@@ -3,7 +3,6 @@ import {
   X, 
   Sparkles, 
   Check, 
-  GitCommit, 
   Loader2, 
   Terminal, 
   FileCode, 
@@ -11,11 +10,17 @@ import {
   Cpu, 
   TestTube2,
   CheckCircle2,
-  Code
+  Code,
+  Download,
+  GitPullRequest,
+  AlertTriangle,
+  ArrowRight,
+  ListChecks
 } from 'lucide-react';
 import { DiffViewer } from './DiffViewer';
 import { VerificationResultCard } from './VerificationResultCard';
 import type { Finding, PatchProposal, VerificationResult } from '../types';
+import { getPrDraft, getPatchDownloadUrl } from '../api/client';
 
 interface FindingDetailModalProps {
   finding: Finding;
@@ -43,246 +48,337 @@ export const FindingDetailModal: React.FC<FindingDetailModalProps> = ({
   onClose
 }) => {
   const [maintainerNotes, setMaintainerNotes] = useState<string>('');
+  const [copiedPr, setCopiedPr] = useState(false);
+  const [loadingPr, setLoadingPr] = useState(false);
 
   const status = proposal?.status;
 
+  const handleCopyPr = async () => {
+    if (!proposal) return;
+    try {
+      setLoadingPr(true);
+      const prData = await getPrDraft(proposal.id);
+      await navigator.clipboard.writeText(prData.markdown);
+      setCopiedPr(true);
+      setTimeout(() => setCopiedPr(false), 2500);
+    } catch (e) {
+      console.error('Failed to copy PR draft:', e);
+    } finally {
+      setLoadingPr(false);
+    }
+  };
+
+  const handleDownloadPatch = () => {
+    if (!proposal) return;
+    const url = getPatchDownloadUrl(proposal.id);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `repomedic-${proposal.id.toLowerCase()}.patch`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-md">
-      <div className="bg-slate-900 border border-slate-800 rounded-xl w-full max-w-4xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/40 backdrop-blur-md">
+      <div className="relative w-full max-w-4xl max-h-[90vh] bg-white/95 border border-white rounded-3xl shadow-2xl overflow-hidden flex flex-col font-sans">
+        
         {/* Modal Header */}
-        <div className="px-6 py-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+        <div className="px-6 py-4.5 border-b border-slate-200/70 flex items-center justify-between bg-slate-50/80">
           <div className="flex items-center space-x-3">
-            <span className="font-mono text-xs font-bold text-white px-2 py-0.5 bg-slate-800 rounded border border-slate-700">
+            <span className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-900 font-mono text-xs font-bold shadow-sm">
               {finding.id}
             </span>
             <div className="flex items-center space-x-2">
-              <span className="text-xs font-semibold text-slate-300">{finding.rule_id}</span>
-              <span className="text-[10px] text-slate-500 uppercase font-mono">{finding.category}</span>
+              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-md border ${
+                finding.severity === 'CRITICAL' 
+                  ? 'bg-rose-50 text-rose-700 border-rose-200' 
+                  : 'bg-amber-50 text-amber-700 border-amber-200'
+              }`}>
+                {finding.severity}
+              </span>
+              <span className="text-xs text-slate-500 font-mono font-semibold">
+                {finding.rule_id}
+              </span>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/50 transition-colors cursor-pointer"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
-          {/* Section 1: Finding Details */}
-          <div className="p-4 bg-slate-950/70 border border-slate-800 rounded-lg space-y-2">
-            <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Observed Diagnostic:</div>
-            <div className="text-sm font-semibold text-white">{finding.message}</div>
-
-            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400 font-mono pt-2">
-              {finding.file_path && (
-                <div className="flex items-center space-x-1 text-slate-300">
-                  <FileCode className="h-3.5 w-3.5 text-cyan-400" />
-                  <span>{finding.file_path}</span>
-                  {finding.line_number && <span className="text-cyan-400">:{finding.line_number}</span>}
-                </div>
-              )}
-              <div className="flex items-center space-x-1 text-slate-500">
-                <Terminal className="h-3 w-3 text-slate-600" />
-                <span>{finding.command}</span>
-              </div>
-            </div>
-
-            {finding.context_code && (
-              <div className="mt-2.5 pt-2 border-t border-slate-800/80">
-                <div className="text-[10px] font-mono text-slate-500 mb-1 flex items-center gap-1">
-                  <Code className="h-3 w-3 text-slate-500" />
-                  Source Context:
-                </div>
-                <pre className="p-2 bg-slate-900 rounded text-[11px] font-mono text-slate-300 overflow-x-auto">
-                  {finding.context_code}
-                </pre>
+        <div className="p-6 overflow-y-auto space-y-6">
+          {/* Finding Core Message */}
+          <div>
+            <h3 className="text-base sm:text-lg font-bold text-slate-900">
+              {finding.message}
+            </h3>
+            {finding.file_path && (
+              <div className="mt-2 flex items-center space-x-2 text-xs font-mono text-slate-500">
+                <FileCode className="h-4 w-4 text-indigo-600" />
+                <span className="text-slate-800 font-semibold">{finding.file_path}</span>
+                {finding.line_number && <span className="text-indigo-600 font-bold">:{finding.line_number}</span>}
               </div>
             )}
           </div>
 
-          {/* Section 2: AI Proposal Trigger */}
-          {!proposal && (
-            <div className="p-6 bg-slate-950/40 border border-slate-800 rounded-lg text-center space-y-3">
-              <h4 className="text-sm font-bold text-white">Generate Verified Fix Proposal</h4>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
-                RepoMedic uses open-weight coding models (DeepSeek-R1 / Qwen2.5-Coder / Llama-3.3) to analyze root causes, generate bounded patches, and verify regressions in isolated worktrees.
-              </p>
-              <button
-                onClick={onGenerateProposal}
-                disabled={isGeneratingProposal}
-                className="px-4 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-sm shadow-cyan-600/30 disabled:opacity-50 flex items-center gap-2 mx-auto cursor-pointer transition-all"
-              >
-                {isGeneratingProposal ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    <span>Synthesizing Remediation...</span>
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-3.5 w-3.5" />
-                    <span>Generate AI Fix Proposal</span>
-                  </>
-                )}
-              </button>
+          {/* Evidence Command */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-mono">
+            <div className="flex items-center space-x-1.5 text-slate-400 text-[10px] uppercase font-bold tracking-wider mb-1">
+              <Terminal className="h-3 w-3" />
+              <span>Diagnostic Origin Evidence</span>
+            </div>
+            <div className="text-slate-800 truncate font-semibold">
+              {finding.evidence_source}
+            </div>
+          </div>
+
+          {/* Context Code Snippet */}
+          {finding.context_code && (
+            <div className="space-y-1.5">
+              <div className="flex items-center space-x-1.5 text-slate-600 text-xs font-semibold">
+                <Code className="h-3.5 w-3.5" />
+                <span>Observed Source Snippet:</span>
+              </div>
+              <pre className="p-3 bg-slate-900 text-slate-100 rounded-2xl text-xs font-mono overflow-x-auto whitespace-pre-wrap leading-relaxed shadow-sm">
+                {finding.context_code}
+              </pre>
             </div>
           )}
 
-          {/* Section 3: Proposal Details & Review */}
-          {proposal && (
-            <div className="space-y-4">
-              {/* Model Provenance Banner */}
-              <div className="flex items-center justify-between px-3.5 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs font-mono">
-                <div className="flex items-center space-x-2">
-                  <Cpu className="h-4 w-4 text-cyan-400" />
-                  <span className="text-slate-400">Engine:</span>
-                  <span className="text-white font-medium">{proposal.model_info.model_id}</span>
-                </div>
-                <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                  {proposal.model_info.license}
-                </span>
+          {/* SECTION: AI Proposed Fix */}
+          <div className="pt-4 border-t border-slate-200/70 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Cpu className="h-4 w-4 text-indigo-600" />
+                <h4 className="text-sm font-bold text-slate-900">
+                  Corrective Patch Synthesis
+                </h4>
               </div>
 
-              {/* Diagnosis Details */}
-              <div className="bg-slate-950/70 border border-slate-800 rounded-lg p-3.5 space-y-2.5">
-                <div>
-                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider font-mono">Explanation:</span>
-                  <p className="text-xs text-slate-200 mt-1">{proposal.explanation}</p>
-                </div>
-                <div>
-                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider font-mono">Root Cause:</span>
-                  <p className="text-xs text-slate-200 mt-1">{proposal.root_cause}</p>
-                </div>
+              {!proposal && (
+                <button
+                  onClick={onGenerateProposal}
+                  disabled={isGeneratingProposal}
+                  className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-md shadow-indigo-500/20"
+                >
+                  {isGeneratingProposal ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-white" />
+                      <span>Synthesizing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Propose Fix</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
 
-                {proposal.suggested_tests && proposal.suggested_tests.length > 0 && (
-                  <div>
-                    <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                      <TestTube2 className="h-3.5 w-3.5 text-indigo-400" />
-                      Suggested Regression Tests:
-                    </span>
-                    <ul className="mt-1 list-disc list-inside text-xs text-indigo-300 font-mono space-y-0.5">
-                      {proposal.suggested_tests.map((t, idx) => (
-                        <li key={idx}>{t}</li>
-                      ))}
-                    </ul>
+            {/* Proposal Details */}
+            {proposal && (
+              <div className="space-y-4 animate-fadeIn">
+                {/* AI Explanation & Root Cause */}
+                <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-200/80 text-xs space-y-2">
+                  <div className="text-slate-900 font-bold text-sm">
+                    {proposal.explanation}
                   </div>
-                )}
-              </div>
-
-              {/* Reviewable Unified Diff */}
-              <div>
-                <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider font-mono mb-1.5 flex items-center gap-1.5">
-                  <FileCode className="h-3.5 w-3.5 text-cyan-400" />
-                  Reviewable Unified Diff
-                </div>
-                <DiffViewer
-                  diffText={proposal.diff}
-                  filePath={proposal.file_path}
-                  beforeContent={proposal.before_content}
-                  afterContent={proposal.after_content}
-                />
-              </div>
-
-              {/* Sandbox Verification Section */}
-              <div className="pt-2">
-                <div className="flex items-center justify-between mb-2.5">
-                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-                    Isolated Sandbox Verification
+                  <div className="text-slate-600 leading-relaxed">
+                    <strong className="text-slate-800">Root Cause:</strong> {proposal.root_cause}
                   </div>
-
-                  {!verification && (
-                    <button
-                      onClick={onVerifyProposal}
-                      disabled={isVerifying}
-                      className="px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-sm shadow-cyan-600/20 disabled:opacity-50 flex items-center gap-1.5 cursor-pointer transition-all"
-                    >
-                      {isVerifying ? (
-                        <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          <span>Verifying in Sandbox...</span>
-                        </>
-                      ) : (
-                        <>
-                          <ShieldCheck className="h-3.5 w-3.5" />
-                          <span>Run Sandbox Verification</span>
-                        </>
-                      )}
-                    </button>
+                  {proposal.suggested_tests?.length > 0 && (
+                    <div className="pt-2 flex items-center gap-2 text-[11px] font-mono text-indigo-700 font-semibold">
+                      <TestTube2 className="h-3.5 w-3.5" />
+                      <span>Regression Tests: {proposal.suggested_tests.join(', ')}</span>
+                    </div>
                   )}
                 </div>
 
-                {verification && (
-                  <VerificationResultCard verification={verification} />
-                )}
-              </div>
-
-              {/* Maintainer Approval & Application Controls */}
-              <div className="pt-3 border-t border-slate-800">
-                <div className="text-xs font-semibold text-slate-300 mb-2 font-mono">Maintainer Review & Decision Governance</div>
-
-                <div className="space-y-2.5">
-                  <input
-                    type="text"
-                    value={maintainerNotes}
-                    onChange={(e) => setMaintainerNotes(e.target.value)}
-                    placeholder="Optional maintainer audit notes..."
-                    disabled={status === 'APPLIED'}
-                    className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 font-mono"
-                  />
-
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => onDecision('approve', maintainerNotes)}
-                        disabled={status === 'APPROVED' || status === 'APPLIED'}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                          status === 'APPROVED' || status === 'APPLIED'
-                            ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                            : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm shadow-emerald-600/20'
-                        }`}
-                      >
-                        <Check className="h-3.5 w-3.5" />
-                        <span>{status === 'APPROVED' || status === 'APPLIED' ? 'Proposal Approved' : 'Approve Fix Proposal'}</span>
-                      </button>
-
-                      <button
-                        onClick={() => onDecision('reject', maintainerNotes)}
-                        disabled={status === 'REJECTED' || status === 'APPLIED'}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                          status === 'REJECTED'
-                            ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                            : 'bg-rose-950/80 hover:bg-rose-900 text-rose-300 border border-rose-800'
-                        }`}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                        <span>Reject Proposal</span>
-                      </button>
+                {/* Risky Dependency & Migration Card */}
+                {(proposal.risky_dependency || proposal.recommended_replacement) && (
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-300 space-y-3 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-xs font-bold text-amber-800">
+                        <AlertTriangle className="h-4 w-4 text-amber-600" />
+                        <span>High-Risk Dependency Modernization</span>
+                      </div>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold border border-amber-200">
+                        Zero Manual Effort
+                      </span>
                     </div>
 
-                    {status === 'APPROVED' && (
-                      <button
-                        onClick={onApply}
-                        className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md shadow-indigo-600/20 flex items-center gap-1.5 cursor-pointer animate-pulse"
-                      >
-                        <GitCommit className="h-3.5 w-3.5" />
-                        <span>Apply Verified Fix to Working Tree</span>
-                      </button>
-                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono">
+                      <div className="p-2.5 rounded-xl bg-white/90 border border-rose-200 text-rose-800 space-y-1 shadow-sm">
+                        <div className="text-[10px] text-rose-500 font-bold uppercase tracking-wider">Identified Risky Library / Pin</div>
+                        <div className="font-semibold break-words">{proposal.risky_dependency || 'Identified deprecated version'}</div>
+                      </div>
+                      <div className="p-2.5 rounded-xl bg-white/90 border border-emerald-200 text-emerald-800 space-y-1 shadow-sm">
+                        <div className="text-[10px] text-emerald-600 font-bold uppercase tracking-wider flex items-center gap-1">
+                          <ArrowRight className="h-3 w-3" /> Recommended Modern Replacement
+                        </div>
+                        <div className="font-semibold break-words">{proposal.recommended_replacement || 'Modern safe release'}</div>
+                      </div>
+                    </div>
 
-                    {status === 'APPLIED' && (
-                      <div className="flex items-center space-x-1.5 text-xs text-emerald-400 font-semibold bg-emerald-950/50 px-3 py-1.5 rounded-lg border border-emerald-800 font-mono">
-                        <CheckCircle2 className="h-4 w-4" />
-                        <span>Patch Applied Cleanly to Repository</span>
+                    {proposal.migration_steps && proposal.migration_steps.length > 0 && (
+                      <div className="pt-2 border-t border-amber-200/60 space-y-1.5">
+                        <div className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
+                          <ListChecks className="h-3.5 w-3.5 text-indigo-600" />
+                          <span>Step-by-Step Migration Guide:</span>
+                        </div>
+                        <ol className="space-y-1.5 pl-1 text-[11px] text-slate-700">
+                          {proposal.migration_steps.map((step, idx) => (
+                            <li key={idx} className="flex items-start gap-2">
+                              <span className="flex-shrink-0 w-4 h-4 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-bold flex items-center justify-center mt-0.5">
+                                {idx + 1}
+                              </span>
+                              <span className="leading-snug">{step.replace(/^\d+\.\s*/, '')}</span>
+                            </li>
+                          ))}
+                        </ol>
                       </div>
                     )}
                   </div>
+                )}
+
+                {/* Diff Viewer & Actions Header */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="text-xs font-bold text-slate-700">
+                      Synthesized Unified Diff:
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleDownloadPatch}
+                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer transition-colors border border-slate-200 shadow-sm"
+                        title="Download unified .patch file"
+                      >
+                        <Download className="h-3 w-3 text-indigo-600" />
+                        <span>Download Patch</span>
+                      </button>
+
+                      <button
+                        onClick={handleCopyPr}
+                        disabled={loadingPr}
+                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-semibold flex items-center gap-1.5 cursor-pointer transition-colors border border-slate-200 shadow-sm"
+                        title="Copy ready-to-paste GitHub PR draft description"
+                      >
+                        {loadingPr ? (
+                          <Loader2 className="h-3 w-3 animate-spin text-indigo-600" />
+                        ) : copiedPr ? (
+                          <Check className="h-3 w-3 text-emerald-600" />
+                        ) : (
+                          <GitPullRequest className="h-3 w-3 text-indigo-600" />
+                        )}
+                        <span>{copiedPr ? 'PR Draft Copied!' : 'Copy PR Draft'}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <DiffViewer
+                    diffText={proposal.diff}
+                    filePath={proposal.file_path}
+                    beforeContent={proposal.before_content}
+                    afterContent={proposal.after_content}
+                  />
+                </div>
+
+
+                {/* Verification Action / Result */}
+                <div className="pt-2 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                      <span>Sandbox Verification Ward:</span>
+                    </div>
+
+                    {!verification && (
+                      <button
+                        onClick={onVerifyProposal}
+                        disabled={isVerifying}
+                        className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-sm"
+                      >
+                        {isVerifying ? (
+                          <>
+                            <Loader2 className="h-3 w-3 animate-spin text-white" />
+                            <span>Executing Sandbox Tests...</span>
+                          </>
+                        ) : (
+                          <>
+                            <ShieldCheck className="h-3.5 w-3.5" />
+                            <span>Run Sandbox Verification</span>
+                          </>
+                        )}
+                      </button>
+                    )}
+                  </div>
+
+                  {verification && (
+                    <VerificationResultCard verification={verification} />
+                  )}
+                </div>
+
+                {/* Maintainer Decision Controls */}
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="text-xs">
+                      <span className="font-semibold text-slate-500">Proposal State: </span>
+                      <span className="font-mono text-xs px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-900 font-bold shadow-sm">
+                        {status}
+                      </span>
+                    </div>
+
+                    {status !== 'APPLIED' && (
+                      <div className="flex items-center gap-2">
+                        {status !== 'APPROVED' && (
+                          <button
+                            onClick={() => onDecision('approve', maintainerNotes)}
+                            className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-emerald-600/20"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                            <span>Approve Patch</span>
+                          </button>
+                        )}
+
+                        {status === 'APPROVED' && (
+                          <button
+                            onClick={onApply}
+                            className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-all flex items-center gap-1.5 cursor-pointer shadow-md"
+                          >
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            <span>Apply to Working Tree</span>
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => onDecision('reject', maintainerNotes)}
+                          className="px-3.5 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold transition-all cursor-pointer"
+                        >
+                          <span>Reject</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {status === 'APPLIED' && (
+                    <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-mono font-bold flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      <span>Patch successfully applied to local repository working tree.</span>
+                    </div>
+                  )}
                 </div>
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>

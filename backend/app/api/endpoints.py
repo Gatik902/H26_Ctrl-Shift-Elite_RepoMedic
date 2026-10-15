@@ -53,14 +53,24 @@ def get_sample_repositories():
     if SAMPLE_REPOS_DIR.exists():
         for d in SAMPLE_REPOS_DIR.iterdir():
             if d.is_dir() and (d / "calc.py" or d / "requirements.txt").exists():
-                samples.append({
-                    "id": d.name,
-                    "name": "Python Arithmetic & Vulnerability Benchmark",
-                    "description": "Authentic Python repo containing real flake8 lint errors, bandit AST assert risks, and failing pytest zero-division guard.",
-                    "path": str(d),
-                    "ecosystem": "Python",
-                    "known_issues": ["ZeroDivisionError in test suite", "B101 assert in production", "F401 unused imports", "Deprecated urllib3"]
-                })
+                if d.name == "isolated-test-fixture":
+                    samples.append({
+                        "id": d.name,
+                        "name": "Isolated Defect & Test Failure Fixture",
+                        "description": "Safe, isolated test repository containing deliberate lint issues (F401, F821) and a failing pytest assertion.",
+                        "path": str(d),
+                        "ecosystem": "Python",
+                        "known_issues": ["AssertionError in test suite", "F401 unused imports (os, sys)", "F821 undefined name 'undefined_var'"]
+                    })
+                else:
+                    samples.append({
+                        "id": d.name,
+                        "name": "Python Arithmetic & Vulnerability Benchmark",
+                        "description": "Authentic Python repo containing real flake8 lint errors, bandit AST assert risks, and failing pytest zero-division guard.",
+                        "path": str(d),
+                        "ecosystem": "Python",
+                        "known_issues": ["ZeroDivisionError in test suite", "B101 assert in production", "F401 unused imports", "Deprecated urllib3"]
+                    })
     return {"samples": samples}
 
 def _execute_scan(scan_id: str, repo_url: str, branch: Optional[str], is_sample: bool, sample_id: Optional[str]):
@@ -254,6 +264,7 @@ def apply_proposal(proposal_id: str, scan_id: str = Query(...)):
     return {"proposal_id": prop.id, "status": "APPLIED", "message": "Patch applied cleanly to repository working tree"}
 
 @router.get("/scans/{scan_id}/capsule")
+@router.get("/scan/{scan_id}/capsule")
 def export_capsule(scan_id: str):
     if scan_id not in SCANS_DB:
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -274,6 +285,7 @@ def export_capsule(scan_id: str):
     }
 
 @router.get("/scans/{scan_id}/capsule/markdown", response_class=PlainTextResponse)
+@router.get("/scan/{scan_id}/capsule/markdown", response_class=PlainTextResponse)
 def export_capsule_markdown(scan_id: str):
     if scan_id not in SCANS_DB:
         raise HTTPException(status_code=404, detail="Scan not found")
@@ -286,3 +298,102 @@ def export_capsule_markdown(scan_id: str):
         VERIFICATIONS_DB
     )
     return markdown_report
+
+@router.get("/proposals/{proposal_id}/patch")
+def download_patch(proposal_id: str):
+    from fastapi.responses import Response
+    if proposal_id not in PROPOSALS_DB:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    prop = PROPOSALS_DB[proposal_id]
+
+    header = (
+        f"# RepoMedic AI Autonomous Patch Proposal\n"
+        f"# Proposal ID: {prop.id}\n"
+        f"# Target File: {prop.file_path}\n"
+        f"# Remediation Engine: {prop.model_info.model_id}\n"
+        f"# Status: {prop.status.value}\n"
+        f"# Created: {prop.created_at.isoformat()}\n\n"
+    )
+    patch_body = header + prop.diff
+    filename = f"repomedic-{prop.id.lower()}.patch"
+
+    return Response(
+        content=patch_body,
+        media_type="text/x-diff",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        }
+    )
+
+@router.get("/proposals/{proposal_id}/pr-draft")
+def get_pr_draft(proposal_id: str):
+    if proposal_id not in PROPOSALS_DB:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    prop = PROPOSALS_DB[proposal_id]
+    ver_res = VERIFICATIONS_DB.get(proposal_id)
+
+    # Build branch name
+    clean_target = prop.file_path.replace("/", "-").replace("\\", "-").replace(".", "-")
+    branch = f"repomedic/fix-{clean_target}"
+
+    # Build markdown
+    md_lines = [
+        f"# 🤖 Fix: {prop.explanation}",
+        "",
+        "## 📋 Defect Summary",
+        f"- **Target File**: `{prop.file_path}`",
+        f"- **Remediation Model**: `{prop.model_info.model_id}` ({prop.model_info.provider})",
+        f"- **Root Cause**: {prop.root_cause}",
+        ""
+    ]
+
+    if prop.risky_dependency or prop.recommended_replacement:
+        md_lines.extend([
+            "## 🛡️ Dependency Migration & Modernization",
+            f"- **Risky Dependency**: `{prop.risky_dependency or 'N/A'}`",
+            f"- **Recommended Replacement**: `{prop.recommended_replacement or 'N/A'}`",
+            ""
+        ])
+
+    if prop.migration_steps:
+        md_lines.extend([
+            "### 🛠️ Migration Steps",
+            *[f"- {step}" for step in prop.migration_steps],
+            ""
+        ])
+
+    if ver_res:
+        md_lines.extend([
+            "## 🧪 Isolated Sandbox Verification",
+            f"- **Verdict**: `{ver_res.verdict.value}`",
+            f"- **Baseline Check**: `{ver_res.baseline_check.command}` (Exit Code: {ver_res.baseline_check.exit_code})",
+            f"- **Sandbox Patched Check**: `{ver_res.proposed_check.command}` (Exit Code: {ver_res.proposed_check.exit_code})",
+            f"- **Outcome**: {ver_res.explanation}",
+            "",
+            "<details><summary>Sandbox Terminal Output</summary>",
+            "",
+            "```text",
+            ver_res.proposed_check.output,
+            "```",
+            "",
+            "</details>",
+            ""
+        ])
+
+    md_lines.extend([
+        "## 📝 Proposed Code Diff",
+        "```diff",
+        prop.diff,
+        "```",
+        "",
+        "---",
+        "*Verified and generated autonomously by [RepoMedic AI](https://github.com/repomedic-ai)*"
+    ])
+
+    return {
+        "proposal_id": prop.id,
+        "title": f"fix({prop.file_path}): {prop.explanation[:70]}",
+        "branch": branch,
+        "markdown": "\n".join(md_lines)
+    }
+

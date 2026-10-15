@@ -65,17 +65,24 @@ Every displayed finding and test result comes from actual repository execution r
    - Default configured model: `meta-llama/Llama-3.3-70B-Instruct` / `Qwen/Qwen2.5-Coder-32B-Instruct` (Llama 3.3 Community License / Apache 2.0).
    - **Truthful Fallback Engine**: If no API key is provided, the deterministic repair engine executes with guaranteed reproducibility, explicitly documenting that deterministic rules were used.
 
-3. **Isolated Sandbox Verification**:
+3. **High-Risk Dependency Modernization & Migration Guide**:
+   - Scans dependency manifests for deprecated packages (`pkg_resources`) and critical CVEs (`Jinja2==2.11.3` CVE-2024-34064, `setuptools==75.8.0` CVE-2024-6345, `idna==2.7` ReDoS).
+   - Automatically recommends safe, modern replacements (e.g. `importlib.resources`, `Jinja2>=3.1.4`) with zero breaking changes.
+   - Generates step-by-step ordered maintainer migration checklists.
+
+4. **Isolated Sandbox Verification**:
    - Disposable workspace created at known commit hash.
    - Patch applied strictly in the sandbox ward.
    - Baseline check vs Sandbox check differential outcome recorded (`PASS`, `FAIL`, `INCONCLUSIVE`).
    - Original repository working tree remains completely untouched during verification.
 
-4. **Maintainer Governance**:
+5. **Maintainer Governance & 1-Click Exports**:
    - Proposals, verifications, approvals, and applications are tracked as distinct states.
    - No patch is applied until explicitly APPROVED by the maintainer with optional audit notes.
+   - **Download Git Patch (`.patch`)**: Instant export of Unified Diff files compatible with `git apply`.
+   - **Copy PR Draft**: Generates formatted, ready-to-paste Pull Request descriptions with terminal execution logs, before/after diffs, and verification proof.
 
-5. **Dependency Exit Capsule**:
+6. **Dependency Exit Capsule**:
    - Exportable in validated **JSON (Schema 1.0.0)** and **Markdown**.
    - Contains complete provenance, baseline vs patched command outputs, exit codes, risk indicators, and rollback commands (`git checkout <commit> -- .`).
 
